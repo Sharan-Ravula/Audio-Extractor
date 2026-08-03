@@ -32,10 +32,9 @@ Personal-use tool. Not distributed or intended for anyone outside this project.
 ## Project structure
 
 ```
-code/
-└── Audio Extractor/
-    ├── Audio Extractor.xcodeproj/
-    └── Audio Extractor/
+Audio Extractor/
+├── Audio Extractor.xcodeproj/
+├── code/
         ├── Audio_ExtractorApp.swift      # @main app entry point
         ├── ContentView.swift              # All UI: URL input, format picker,
         │                                  # progress, results, compare panel
