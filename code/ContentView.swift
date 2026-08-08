@@ -18,12 +18,14 @@ struct ContentView: View {
 
     @State private var titleHueRotation: Double = 0
 
-    // Comparison feature
-    @State private var compareFormat: AudioFormat = .mp3
+    // Comparison feature (uses temp storage, cleaned up on close)
+    @State private var compareFormatA: AudioFormat = .flac
+    @State private var compareFormatB: AudioFormat = .mp3
     @State private var isComparing = false
     @State private var comparisonResult: ComparisonResult?
     @State private var comparisonError: String?
     @State private var showABXSheet = false
+    @State private var compareTempDir: URL?
 
     private let service: YTDLPService?
     private let serviceInitError: String?
@@ -159,65 +161,37 @@ struct ContentView: View {
                         .padding(.bottom, 4)
                 }
 
-                Button {
-                    Task { await downloadAndConvert() }
-                } label: {
-                    Text(isProcessing ? "Processing…" : "Download & Convert")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isProcessing)
-            }
-
-            if let result = downloadResult {
-                GroupBox("Done") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 4) {
-                            Text("Saved:").foregroundStyle(.secondary)
-                            Text(result.outputURL.lastPathComponent).bold()
-                        }
-                        HStack(spacing: 4) {
-                            Text("Format:").foregroundStyle(.secondary)
-                            Text(result.format.displayName)
-                                .bold()
-                                .foregroundStyle(videoInfo.map { colorForFormat(result.format, info: $0) } ?? .primary)
-                        }
-                        HStack(spacing: 4) {
-                            Text("File size:").foregroundStyle(.secondary)
-                            Text(ByteCountFormatter.string(fromByteCount: result.fileSizeBytes, countStyle: .file))
-                                .bold()
-                                .foregroundStyle(videoInfo.map { colorForActualSize(result.fileSizeBytes, info: $0) } ?? .primary)
-                        }
-                        HStack(spacing: 4) {
-                            Text("Processing time:").foregroundStyle(.secondary)
-                            Text("\(String(format: "%.1f", result.processingTime))s")
-                                .bold()
-                                .foregroundStyle(Self.speedColor(seconds: result.processingTime))
-                        }
-                        Button("Reveal in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(4)
-                }
-
-                GroupBox("Compare Audio Quality") {
+                GroupBox("Compare Formats (before downloading)") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Runs an audio null test: decodes both files, aligns them, subtracts one from the other, and measures how loud what's left is. Follow up with the blind ABX test to find out if you can actually hear it.")
+                        Text("Downloads two formats to a temporary folder — not your Downloads folder — so you can compare before committing. Runs an audio null test, then offers a blind ABX test. Everything here is deleted when you close the comparison.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
                         HStack {
-                            Text("Compare \(result.format.displayName) against:")
-                            Picker("", selection: $compareFormat) {
-                                ForEach(AudioFormat.allCases.filter { $0 != result.format }) { fmt in
+                            Text("Compare")
+                            Picker("", selection: $compareFormatA) {
+                                ForEach(AudioFormat.allCases) { fmt in
                                     Text(fmt.displayName).tag(fmt)
                                 }
                             }
                             .labelsHidden()
-                            .frame(width: 220)
+                            .frame(width: 200)
+                            .disabled(isComparing)
+                            .onChange(of: compareFormatA) { _, newValue in
+                                if compareFormatB == newValue {
+                                    compareFormatB = AudioFormat.allCases.first { $0 != newValue } ?? newValue
+                                }
+                            }
+
+                            Text("against")
+                            Picker("", selection: $compareFormatB) {
+                                ForEach(AudioFormat.allCases.filter { $0 != compareFormatA }) { fmt in
+                                    Text(fmt.displayName).tag(fmt)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 200)
+                            .disabled(isComparing)
 
                             Button {
                                 Task { await performComparison() }
@@ -281,19 +255,73 @@ struct ContentView: View {
                                 .foregroundStyle(comparison.differenceRMSdB.map { Self.differenceColor(dB: $0) } ?? .secondary)
                                 .bold()
 
-                            Text("Files are automatically time-aligned (cross-correlation) before this measurement, resolution ~0.1ms. For the most reliable answer on whether a difference is actually audible, use the blind ABX test below rather than this number alone.")
+                            Text("Files are automatically time-aligned (cross-correlation) before this measurement, resolution ~0.1ms. For the most reliable answer on whether a difference is actually audible, use the blind ABX test rather than this number alone.")
                                 .font(.caption2)
                                 .foregroundStyle(.yellow)
 
-                            Button {
-                                showABXSheet = true
-                            } label: {
-                                Text("🎧 Take Blind ABX Test").bold()
+                            HStack {
+                                Button {
+                                    showABXSheet = true
+                                } label: {
+                                    Text("🎧 Take Blind ABX Test").bold()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.purple)
+
+                                Button {
+                                    closeComparison()
+                                } label: {
+                                    Text("Close Comparison").bold()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.red)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.purple)
                             .padding(.top, 4)
                         }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+                }
+
+                Button {
+                    Task { await downloadAndConvert() }
+                } label: {
+                    Text(isProcessing ? "Processing…" : "Download & Convert")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isProcessing)
+            }
+
+            if let result = downloadResult {
+                GroupBox("Done") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Text("Saved:").foregroundStyle(.secondary)
+                            Text(result.outputURL.lastPathComponent).bold()
+                        }
+                        HStack(spacing: 4) {
+                            Text("Format:").foregroundStyle(.secondary)
+                            Text(result.format.displayName)
+                                .bold()
+                                .foregroundStyle(videoInfo.map { colorForFormat(result.format, info: $0) } ?? .primary)
+                        }
+                        HStack(spacing: 4) {
+                            Text("File size:").foregroundStyle(.secondary)
+                            Text(ByteCountFormatter.string(fromByteCount: result.fileSizeBytes, countStyle: .file))
+                                .bold()
+                                .foregroundStyle(videoInfo.map { colorForActualSize(result.fileSizeBytes, info: $0) } ?? .primary)
+                        }
+                        HStack(spacing: 4) {
+                            Text("Processing time:").foregroundStyle(.secondary)
+                            Text("\(String(format: "%.1f", result.processingTime))s")
+                                .bold()
+                                .foregroundStyle(Self.speedColor(seconds: result.processingTime))
+                        }
+                        Button("Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([result.outputURL])
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(4)
@@ -545,7 +573,7 @@ struct ContentView: View {
     }
 
     private func performComparison() async {
-        guard let service, let info = videoInfo, let currentResult = downloadResult else { return }
+        guard let service, let info = videoInfo else { return }
         comparisonError = nil
         comparisonResult = nil
         isComparing = true
@@ -553,43 +581,69 @@ struct ContentView: View {
         startTimer()
         defer { isComparing = false; stopTimer() }
         do {
-            let outputDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+            // Fresh temp directory per comparison — never touches Downloads,
+            // and gets deleted entirely when the user closes the comparison.
+            let tempDir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("AudioExtractorCompare-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            compareTempDir = tempDir
+
             let baseName = sanitizedFileName(info.title)
 
-            // Download the second format fresh so we have a real file to compare against.
-            let secondResult = try await service.downloadAudio(
+            let resultA = try await service.downloadAudio(
                 url: urlText,
-                format: compareFormat,
-                outputDirectory: outputDir,
-                baseName: baseName + "_compare",
+                format: compareFormatA,
+                outputDirectory: tempDir,
+                baseName: baseName + "_A",
+                totalDurationSeconds: info.durationSeconds,
+                onStatus: { line in Task { @MainActor in statusText = line } },
+                onProgress: { _ in }
+            )
+
+            let resultB = try await service.downloadAudio(
+                url: urlText,
+                format: compareFormatB,
+                outputDirectory: tempDir,
+                baseName: baseName + "_B",
                 totalDurationSeconds: info.durationSeconds,
                 onStatus: { line in Task { @MainActor in statusText = line } },
                 onProgress: { _ in }
             )
 
             let (rms, peak, offsetSeconds) = try await service.compareAudio(
-                fileA: currentResult.outputURL,
-                fileB: secondResult.outputURL,
-                outputDirectory: outputDir,
+                fileA: resultA.outputURL,
+                fileB: resultB.outputURL,
+                outputDirectory: tempDir,
                 baseName: baseName,
                 onStatus: { line in Task { @MainActor in statusText = line } }
             )
 
             comparisonResult = ComparisonResult(
-                formatA: currentResult.format,
-                formatB: compareFormat,
+                formatA: compareFormatA,
+                formatB: compareFormatB,
                 differenceRMSdB: rms,
                 differencePeakdB: peak,
                 detectedOffsetMs: offsetSeconds * 1000,
-                fileAURL: currentResult.outputURL,
-                fileBURL: secondResult.outputURL
+                fileAURL: resultA.outputURL,
+                fileBURL: resultB.outputURL
             )
-            // The comparison audio file is kept — it's needed for the ABX test
-            // below, and it's just a normal file in Downloads like any other
-            // export, not a hidden temp file.
         } catch {
             comparisonError = error.localizedDescription
+            // Clean up on failure too — no reason to leave a half-finished temp dir around.
+            closeComparison()
         }
+    }
+
+    /// Clears the comparison result and deletes its temp directory (both
+    /// downloaded audio files, gone). Called from the "Close Comparison"
+    /// button, or automatically if a comparison fails partway through.
+    private func closeComparison() {
+        comparisonResult = nil
+        comparisonError = nil
+        if let dir = compareTempDir {
+            try? FileManager.default.removeItem(at: dir)
+        }
+        compareTempDir = nil
     }
 
     /// Colors the null-test difference reading: very negative dB (inaudible) = green,
