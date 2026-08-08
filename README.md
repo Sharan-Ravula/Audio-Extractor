@@ -15,7 +15,7 @@ Personal-use tool. Not distributed or intended for anyone outside this project.
   - `M4A / AAC` — 256kbps, QuickTime-native
 - **Live progress** — real-time status text and progress bar streamed from `yt-dlp`/`ffmpeg`, with elapsed time and an estimated-remaining calculation
 - **Per-format size estimates** before you commit, color-coded on a blue→red spectrum (smallest→largest)
-- **Compare Audio Quality** — an objective null test between any two formats: cross-correlation-based time alignment (via Accelerate), then measures the loudness of the leftover "difference signal" in dB
+- **Compare Formats, before downloading** — pick any two formats and run an objective null test between them (cross-correlation-based time alignment via Accelerate, then measures the loudness of the leftover "difference signal" in dB) using temporary files, so nothing lands in your Downloads folder until you actually decide
 - **Blind ABX test** — the real answer to "can I actually hear a difference." Play hidden randomized clips, guess which is which, and get a statistical significance result (binomial p-value) over multiple trials
 - **Custom animated app icon and gradient UI**, color-coded throughout (file size, bitrate quality, processing speed, live status)
 
@@ -67,15 +67,15 @@ Audio Extractor/
 ## How it works, briefly
 
 1. **Fetch Info** runs `yt-dlp -J <url>` to pull JSON metadata without downloading — title, duration, and the best available audio-only stream's bitrate/codec.
-2. **Download & Convert** runs `yt-dlp -f bestaudio` to grab the highest-quality audio stream, then (unless `Original` is selected) pipes it through `ffmpeg` to the chosen format.
-3. **Compare Audio Quality** downloads a second format, detects any timing offset between the two files via cross-correlation, aligns them, and runs an `ffmpeg astats` null test on the difference signal.
-4. **Blind ABX Test** uses `AVAudioPlayer` to play randomized hidden clips from each file and computes whether your hit rate over N trials is statistically distinguishable from chance guessing.
+2. **Compare Formats** (optional, before downloading) downloads any two chosen formats into a temporary directory, detects any timing offset between them via cross-correlation, aligns them, and runs an `ffmpeg astats` null test on the difference signal. Closing the comparison deletes the temp directory and both files.
+3. **Blind ABX Test** uses `AVAudioPlayer` to play randomized hidden clips from the two compared files and computes whether your hit rate over N trials is statistically distinguishable from chance guessing.
+4. **Download & Convert** runs `yt-dlp -f bestaudio` to grab the highest-quality audio stream, then (unless `Original` is selected) pipes it through `ffmpeg` to your chosen format — saved permanently to Downloads.
 
 ## Known limitations
 
 - The null test's dB reading is diagnostic, not authoritative — trust the ABX test over the number for a real answer on audibility.
 - `Original` format files may download in `.webm` (Opus) or other containers that don't play natively in Music.app/QuickTime — use VLC or similar if needed.
-- Comparison audio files are kept on disk (not deleted) so the ABX test has something to play — clean these up manually from Downloads if disk space matters.
+- If the app is force-quit mid-comparison (rather than closed normally via "Close Comparison"), its temp directory can be orphaned — macOS periodically clears `/tmp` on its own, but it's not an immediate guarantee.
 
 ## License
  
