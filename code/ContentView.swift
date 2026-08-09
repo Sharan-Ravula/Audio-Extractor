@@ -374,6 +374,8 @@ struct ContentView: View {
         guard let service else { return }
         errorMessage = nil
         downloadResult = nil
+        videoInfo = nil
+        closeComparison() // clear any leftover comparison from a previous video and delete its temp dir
         statusText = "Starting…"
         isFetchingInfo = true
         startTimer()
@@ -580,6 +582,12 @@ struct ContentView: View {
         statusText = "Starting comparison…"
         startTimer()
         defer { isComparing = false; stopTimer() }
+        // Delete any temp directory left over from a previous comparison that
+        // wasn't explicitly closed — otherwise its downloaded files are orphaned.
+        if let staleDir = compareTempDir {
+            try? FileManager.default.removeItem(at: staleDir)
+            compareTempDir = nil
+        }
         do {
             // Fresh temp directory per comparison — never touches Downloads,
             // and gets deleted entirely when the user closes the comparison.

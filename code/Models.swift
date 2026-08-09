@@ -38,7 +38,9 @@ enum AudioFormat: String, CaseIterable, Identifiable {
         case .mp3:
             return ["-vn", "-acodec", "libmp3lame", "-b:a", "320k", outputPath]
         case .m4a:
-            // Try to just remux (copy) if source is already AAC — falls back to re-encode if that fails
+            // Re-encode args, used as the fallback when a direct stream copy
+            // isn't possible — see YTDLPService.downloadAudio, which tries
+            // "-acodec copy" first and only falls back to this re-encode.
             return ["-vn", "-acodec", "aac", "-b:a", "256k", outputPath]
         }
     }

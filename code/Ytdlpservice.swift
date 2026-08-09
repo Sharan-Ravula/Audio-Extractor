@@ -37,12 +37,19 @@ final class YTDLPService {
     /// ("[youtube] Downloading webpage" etc.) to stderr, which we surface
     /// live via onStatus so the UI isn't just a blank spinner.
     func fetchInfo(url: String, onStatus: @escaping @Sendable (String) -> Void) async throws -> VideoInfo {
+        guard let parsed = URL(string: url),
+              let scheme = parsed.scheme, scheme == "http" || scheme == "https",
+              parsed.host != nil else {
+            throw AppError.invalidURL
+        }
+
         onStatus("Starting yt-dlp…")
         let json = try await runStreaming(
             executable: ytdlpPath,
             args: ["-J", "--no-warnings", "--no-playlist", url],
             onStdout: nil,
-            onStderr: { line in onStatus(line) }
+            onStderr: { line in onStatus(line) },
+            mapError: AppError.metadataFetchFailed
         )
 
         guard let data = json.data(using: .utf8),
@@ -98,6 +105,15 @@ final class YTDLPService {
         onStatus("Downloading best audio stream…")
         onProgress(0)
 
+        // Clear out any stale "_raw" file left behind by a previous failed/canceled
+        // run with this same base name — otherwise the lookup below could pick up
+        // the old file instead of the one we're about to download.
+        if let staleContents = try? FileManager.default.contentsOfDirectory(at: outputDirectory, includingPropertiesForKeys: nil) {
+            for file in staleContents where file.lastPathComponent.hasPrefix("\(baseName)_raw") {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+
         _ = try await runStreaming(
             executable: ytdlpPath,
             args: ["-f", "bestaudio", "--no-playlist", "--newline", "-o", rawDownloadPath, url],
@@ -141,22 +157,41 @@ final class YTDLPService {
         }
 
         let outputPath = outputDirectory.appendingPathComponent("\(baseName).\(format.rawValue)").path
-        var args = ["-y", "-i", rawFile.path]
-        args += format.ffmpegArgs(outputPath: outputPath)
 
         onStatus("Converting to \(format.rawValue.uppercased())…")
-        _ = try await runStreaming(
-            executable: ffmpegPath,
-            args: args,
-            onStdout: nil,
-            onStderr: { line in
-                onStatus(line)
-                if totalDurationSeconds > 0, let elapsed = Self.parseFFmpegElapsedSeconds(line) {
-                    let pct = min(elapsed / totalDurationSeconds, 1.0)
-                    onProgress(0.5 + pct * 0.5)
-                }
+
+        func runConversion(_ args: [String]) async throws {
+            _ = try await runStreaming(
+                executable: ffmpegPath,
+                args: args,
+                onStdout: nil,
+                onStderr: { line in
+                    onStatus(line)
+                    if totalDurationSeconds > 0, let elapsed = Self.parseFFmpegElapsedSeconds(line) {
+                        let pct = min(elapsed / totalDurationSeconds, 1.0)
+                        onProgress(0.5 + pct * 0.5)
+                    }
+                },
+                mapError: AppError.conversionFailed
+            )
+        }
+
+        if format == .m4a {
+            // Prefer a lossless stream copy — if the source is already AAC
+            // (common for YouTube's m4a-native streams), this avoids a
+            // pointless lossy-to-lossy re-encode. Falls back to re-encoding
+            // if the source codec can't be copied into an m4a container
+            // (e.g. Opus/webm sources).
+            do {
+                try await runConversion(["-y", "-i", rawFile.path, "-vn", "-acodec", "copy", outputPath])
+            } catch {
+                onStatus("Source isn't AAC — re-encoding to AAC instead…")
+                try await runConversion(["-y", "-i", rawFile.path] + format.ffmpegArgs(outputPath: outputPath))
             }
-        )
+        } else {
+            let args = ["-y", "-i", rawFile.path] + format.ffmpegArgs(outputPath: outputPath)
+            try await runConversion(args)
+        }
 
         onProgress(1.0)
         try? FileManager.default.removeItem(at: rawFile)
@@ -231,7 +266,8 @@ final class YTDLPService {
                 if line.contains("Peak level dB:"), let v = Self.parseTrailingDouble(line) {
                     peakDB = v
                 }
-            }
+            },
+            mapError: AppError.conversionFailed
         )
 
         return (rmsDB, peakDB, offsetSeconds)
@@ -269,7 +305,8 @@ final class YTDLPService {
         executable: String,
         args: [String],
         onStdout: (@Sendable (String) -> Void)?,
-        onStderr: (@Sendable (String) -> Void)?
+        onStderr: (@Sendable (String) -> Void)?,
+        mapError: @escaping @Sendable (String) -> AppError = AppError.downloadFailed
     ) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             let task = Process()
@@ -309,7 +346,7 @@ final class YTDLPService {
                 } else {
                     let last = buffer.lastStderr
                     let msg = last.isEmpty ? "Unknown error (exit \(process.terminationStatus))" : last
-                    continuation.resume(throwing: AppError.downloadFailed(msg))
+                    continuation.resume(throwing: mapError(msg))
                 }
             }
 
