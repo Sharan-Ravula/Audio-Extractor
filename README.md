@@ -4,6 +4,16 @@ A native macOS app for extracting audio from YouTube videos — pick a URL, pick
 
 Personal-use tool. Not distributed or intended for anyone outside this project.
 
+## Screenshots
+
+**Main window** — format picker with live size estimates, plus a completed format comparison:
+
+![Main window with format comparison](UI-Overview/Audio-Ui-overview.png)
+
+**Blind ABX test** — guess which hidden clip matches A or B, no quality labels shown:
+
+![Blind ABX test](UI-Overview/comparison-test.png)
+
 ## Features
 
 - **Paste a YouTube URL → fetch metadata** (title, length, source bitrate/codec) before downloading anything
@@ -34,35 +44,35 @@ Personal-use tool. Not distributed or intended for anyone outside this project.
 ```
 Audio Extractor/
 ├── Audio Extractor.xcodeproj/
-├── code/
-        ├── Audio_ExtractorApp.swift      # @main app entry point
-        ├── ContentView.swift              # All UI: URL input, format picker,
-        │                                  # progress, results, compare panel
-        ├── Models.swift                   # AudioFormat, VideoInfo, DownloadResult,
-        │                                  # ComparisonResult, AppError
-        ├── YTDLPService.swift             # Shells out to yt-dlp/ffmpeg:
-        │                                  # metadata fetch, download+convert,
-        │                                  # null-test comparison
-        ├── AudioAligner.swift             # Cross-correlation-based audio
-        │                                  # alignment (Accelerate framework)
-        ├── ABXTestView.swift              # Blind ABX listening test +
-        │                                  # binomial significance calculation
-        └── Assets.xcassets/
-            └── AppIcon.appiconset/
-                ├── Contents.json
-                ├── icon_16x16.png
-                ├── icon_16x16@2x.png
-                ├── icon_32x32.png
-                ├── icon_32x32@2x.png
-                ├── icon_128x128.png
-                ├── icon_128x128@2x.png
-                ├── icon_256x256.png
-                ├── icon_256x256@2x.png
-                ├── icon_512x512.png
-                └── icon_512x512@2x.png
+├── README.md
+├── UI-Overview/                        # Screenshots used in this README
+└── Audio Extractor/
+    ├── Ytaudioextractapp.swift         # @main app entry point
+    ├── ContentView.swift               # All UI: URL input, format picker,
+    │                                    # progress, results, compare panel
+    ├── Models.swift                    # AudioFormat, VideoInfo, DownloadResult,
+    │                                    # ComparisonResult, AppError
+    ├── Ytdlpservice.swift              # Shells out to yt-dlp/ffmpeg:
+    │                                    # metadata fetch, download+convert,
+    │                                    # null-test comparison
+    ├── Audioaligner.swift              # Cross-correlation-based audio
+    │                                    # alignment (Accelerate framework)
+    ├── Abxtestview.swift               # Blind ABX listening test +
+    │                                    # binomial significance calculation
+    └── Assets.xcassets/
+        └── AppIcon.appiconset/
+            ├── Contents.json
+            ├── icon_16x16.png
+            ├── icon_16x16@2x.png
+            ├── icon_32x32.png
+            ├── icon_32x32@2x.png
+            ├── icon_128x128.png
+            ├── icon_128x128@2x.png
+            ├── icon_256x256.png
+            ├── icon_256x256@2x.png
+            ├── icon_512x512.png
+            └── icon_512x512@2x.png
 ```
-
-> Note: rename `Audio_ExtractorApp.swift` above to whatever your actual `@main` entry file is called in Xcode — file naming can drift slightly from what's shown here depending on how the project was created.
 
 ## How it works, briefly
 
